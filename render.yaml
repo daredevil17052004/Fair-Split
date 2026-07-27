@@ -13,6 +13,6 @@ services:
       - key: GEMINI_API_KEY
         sync: false          # set manually in Render dashboard
       - key: ALLOWED_ORIGINS
-        sync: false          # set to your Vercel frontend URL after deploy
+        value: https://fair-split-3pjl.vercel.app
     healthCheckPath: /
     autoDeploy: true
