@@ -16,11 +16,77 @@ Fairness rules (per assignment spec):
 
 from __future__ import annotations
 
+import heapq
 from typing import Dict, List, Optional
 
 # Maximum rupee gap that may be silently absorbed as a rounding artefact.
 # Anything larger must be flagged and left unabsorbed.
 _MAX_ABSORPTION_RUPEES = 2
+
+
+def _greedy_settle_up(net_balances: Dict[str, float]) -> List[Dict]:
+    """
+    Minimise the number of peer-to-peer transfers needed to settle all debts.
+
+    Algorithm (greedy, O(n log n)):
+    1. Compute net balance for each person:
+         positive  → they are owed money (creditor)
+         negative  → they owe money    (debtor)
+    2. Use two max-heaps (simulated with negation in Python's min-heap):
+         - creditors heap: (-amount, name)
+         - debtors   heap: (-amount, name)
+    3. Each iteration: match the largest creditor with the largest debtor.
+       Transfer min(credit, debt). If either side has a remainder, push it
+       back onto its heap.
+    4. Repeat until both heaps are empty.
+
+    This produces the minimum possible number of transactions.
+    For a single-payer bill this yields the same n-1 transfers as the
+    naive loop; for multi-payer bills it collapses the graph further.
+
+    Args:
+        net_balances: {person_name: net_amount}
+                      positive = creditor, negative = debtor
+
+    Returns:
+        List of {"from", "to", "amount"} transfer dicts, sorted largest-first.
+    """
+    creditors: List[tuple] = []   # max-heap: (-balance, name)
+    debtors:   List[tuple] = []   # max-heap: (-|balance|, name)
+
+    for name, balance in net_balances.items():
+        if balance > 0.01:
+            heapq.heappush(creditors, (-balance, name))
+        elif balance < -0.01:
+            heapq.heappush(debtors, (balance, name))  # already negative
+
+    transactions: List[Dict] = []
+
+    while creditors and debtors:
+        cred_neg, cred_name = heapq.heappop(creditors)
+        cred_bal = -cred_neg                          # make positive
+
+        debt_bal, debt_name = heapq.heappop(debtors)
+        debt_bal = -debt_bal                          # make positive
+
+        amount = min(cred_bal, debt_bal)
+        transactions.append({
+            "from":   debt_name,
+            "to":     cred_name,
+            "amount": round(amount),
+        })
+
+        remaining_cred = cred_bal - amount
+        remaining_debt = debt_bal - amount
+
+        if remaining_cred > 0.01:
+            heapq.heappush(creditors, (-remaining_cred, cred_name))
+        if remaining_debt > 0.01:
+            heapq.heappush(debtors,   (-remaining_debt, debt_name))
+
+    # Sort descending by amount so the largest transfer is shown first
+    transactions.sort(key=lambda t: t["amount"], reverse=True)
+    return transactions
 
 
 def calculate_split(
@@ -306,14 +372,27 @@ def calculate_split(
         "matches_bill": final_sum == grand_total_int,
     }
 
-    # ── 7. Settle-up ────────────────────────────────────────────────────────
+    # ── 7. Settle-up (greedy minimum-transactions algorithm) ─────────────────
+    #
+    # Build net balances:
+    #   Payer   → positive (they are owed everyone else's share)
+    #   Others  → negative (they owe their computed total)
+    #
+    # _greedy_settle_up() then minimises the number of peer-to-peer transfers
+    # using a max-heap matching of creditors against debtors.
     settle_up: List[Dict] = []
     if payer:
+        net_balances: Dict[str, float] = {}
         for p in per_person_data:
-            if p["name"] != payer and p["total"] > 0:
-                settle_up.append(
-                    {"from": p["name"], "to": payer, "amount": p["total"]}
+            if p["name"] == payer:
+                # Payer fronted the full bill; they are owed everyone else's share
+                net_balances[payer] = float(
+                    sum(o["total"] for o in per_person_data if o["name"] != payer)
                 )
+            else:
+                net_balances[p["name"]] = -float(p["total"])  # they owe this
+
+        settle_up = _greedy_settle_up(net_balances)
     else:
         flags.append("No payer identified — settle-up cannot be computed")
 
