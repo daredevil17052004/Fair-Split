@@ -283,37 +283,76 @@ Rules — follow every one:
 8. If a receipt item is not mentioned in the description at all, assign it to ALL people (qty 1 each) and note in assumptions.
 9. "I" or "me" in the description — if the narrator's name is ambiguous, add a flag.
 10. A person named in the description but assigned no items → still include in people; note in assumptions.
-11. Match items by approximate name (e.g., "the pasta" → "Penne Arrabiata", "the beers" → "Craft Beer").
-12. Be explicit and specific in every assumption entry — avoid vague statements.
 13. Quantity mismatch check: for each item, sum the qty values across all consumers.
     If this sum differs from the receipt qty for that item, add a flag:
     "'<item>' billed qty <receipt_qty> but description implies <described_qty> consumed —
-     splitting billed amount proportionally to described quantities."
+     splitting billed amount proportionally to the described quantities."
     Do NOT change the consumers list — just add the flag. The calculator will split the
     billed amount proportionally to the described quantities regardless.
 """
+
+# Words that look like names (capital first letter) but are quantity/group words.
+# Extend this list if new edge cases arise.
+_QUANTITY_WORDS: set = {
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
+    "us", "we", "our", "all", "both", "each", "everyone", "everybody",
+    "the", "a", "an", "this", "that", "these", "those",
+    "i", "me", "my", "he", "she", "they", "them", "their",
+    "everything", "nothing", "something",
+}
+
+
+def _extract_participants_fallback(description: str) -> List[str]:
+    """
+    Robustly extract participant names from a plain-English description.
+
+    Two-tier strategy:
+    1. Explicit list pattern — "N of us: Name1, Name2, ..."
+       If the colon-separated list is present, trust it completely.
+       The quantity phrase ("Eight of us") is discarded; only the names after
+       the colon are used. This prevents number-words like "Eight" from being
+       misidentified as participants.
+    2. Capitalised-word scan — used only when no explicit list is found.
+       Filters out quantity words, group pronouns, and common stop words
+       defined in _QUANTITY_WORDS.
+    """
+    # Tier 1: explicit "N of us: Name1, Name2, ..." pattern
+    colon_match = re.search(
+        r'\bof\s+us\s*[:\-]\s*([A-Z][a-z]+(?:\s*,\s*[A-Z][a-z]+)+)',
+        description,
+    )
+    if colon_match:
+        names = [n.strip() for n in colon_match.group(1).split(',')]
+        # Deduplicate while preserving order
+        seen: set = set()
+        result = []
+        for n in names:
+            if n and n not in seen:
+                seen.add(n)
+                result.append(n)
+        return result
+
+    # Tier 2: capitalised-word scan with quantity-word filter
+    candidates = re.findall(r'\b[A-Z][a-z]+\b', description)
+    seen = set()
+    result = []
+    for w in candidates:
+        if w.lower() not in _QUANTITY_WORDS and w not in seen:
+            seen.add(w)
+            result.append(w)
+    return result
 
 
 def _mock_fallback_description(items: List[Dict], description: str) -> Dict:
     """Fallback natural language description parser if AI APIs fail."""
     logger.info("Using offline description parsing logic")
 
-    # Extract names mentioned in sentence
-    words = re.findall(r"\b[A-Z][a-z]+\b", description)
-    stop_words = {"Three", "Four", "Five", "The", "Everything", "We", "We've", "Each", "All"}
-    people = [w for w in words if w not in stop_words]
+    people = _extract_participants_fallback(description)
     if not people:
         people = ["Ravi", "Neha", "Sameer"]
 
-    deduped_people = []
-    seen = set()
-    for p in people:
-        if p not in seen:
-            seen.add(p)
-            deduped_people.append(p)
-    people = deduped_people
-
-    # Find payer
+    # Find payer — look for "Name paid" anywhere in the description
     payer = None
     payer_match = re.search(r"([A-Z][a-z]+)\s+paid", description, re.IGNORECASE)
     if payer_match:
@@ -323,26 +362,21 @@ def _mock_fallback_description(items: List[Dict], description: str) -> Dict:
     if not payer and people:
         payer = people[-1]
 
-    # Assign items
+    # Assign items — all items assigned equally to all identified participants.
+    # The fallback cannot resolve subgroup assignments.
     assignments = []
     assumptions = [f"Identified participants: {', '.join(people)}"]
     if payer:
         assumptions.append(f"Identified {payer} as bill payer.")
 
-    item_names = [it["name"] for it in items]
-    for item_name in item_names:
-        # Check if a specific person is mentioned near item
-        assigned_to = []
-        for person in people:
-            if person.lower() in description.lower():
-                # Rough matching
-                assigned_to.append(person)
+    for item in items:
+        item_name = item["name"]
+        assignments.append({"item": item_name, "assigned_to": list(people)})
 
-        if not assigned_to:
-            assigned_to = list(people)
-            assumptions.append(f"Assigned '{item_name}' equally to all participants.")
-
-        assignments.append({"item": item_name, "assigned_to": assigned_to})
+    assumptions.append(
+        "All items assigned equally among all participants — "
+        "fallback parser cannot resolve subgroup assignments."
+    )
 
     return {
         "people": people,
