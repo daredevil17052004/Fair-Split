@@ -48,19 +48,21 @@ The table at the top gives the verdict; the body explains what was tricky, what 
 
 ---
 
-## EC-3 — Tip / Handwritten Addition Silently Dropped (EC-7, Rohan/Sneha Bill)
+## EC-3 — Discount Applied Before Service & Tax (Punjab Da Dhaba, Bill #2274)
 
-**Receipt:** Standard printed bill total ₹970. Handwritten tip of ₹88 added at the bottom. Rohan paid ₹1,058 total.
+**Receipt:** Subtotal ₹690. Coupon FLAT10 applies 10% discount = -₹69. Service charge 2.5% = ₹31.05 (applied to post-discount subtotal per bill footer: "Discount applied before service & tax"). CGST + SGST 5% = ₹32.60. Round-off -₹0.05. Grand total ₹684.
 
-**What the tool did (before fix):** Gemini OCR had no `extra_charges` field in the schema, so the tip had nowhere to go. It was silently dropped. Output: grand total ₹970, "Zero Variance Reconciled," 0 audit flags. Sneha was told she owed ₹452 (her share of ₹970). Rohan was short ₹88 with no indication why.
+**Complexity:** Discount applied before service and tax changes the arithmetic order. Most receipts apply discount to the subtotal only; here it reduces the base for service and tax too.
 
-**Correct behaviour:**
-- Tip is extracted into `extra_charges: [{name: "Tip", amount: 88, is_handwritten: true}]`.
-- Each extra charge generates an audit flag: `"'Tip' of ₹88 found on bill (appears handwritten) — not covered by fairness rules. Excluded from split. Verify with participants."`
-- Split is computed on ₹970 (printed bill before tip). `matches_bill: false` because ₹970 ≠ ₹1,058.
-- Users decide manually whether to split the tip; the tool does not pick silently.
+**Result — Unverified (rate limit interrupted test):** During testing, the Gemini API hit a quota limit mid-run. The image extraction stage fell back to `_mock_fallback_receipt()`, which returns the hardcoded Grand Bistro bill — not Punjab Da Dhaba. The tool then split the wrong bill's items (Cappuccino, Club Sandwich, Penne Pasta, etc.) and returned `matches_bill: true` against the mock grand total. This is a compounding failure: both the OCR and description-parsing fallbacks fired simultaneously, producing a result that looks correct but is entirely fabricated.
 
-**Fix location:** `extractor.py` — `extra_charges` field added to OCR schema with Rule 11. `calculator.py` — Step 0a flags every entry in `extra_charges`.
+**What correct behaviour should look like:**
+- Tool extracted all fields correctly from the Punjab Da Dhaba receipt.
+- Service and tax allocation (proportional to each person's post-discount subtotal) matched the bill. `matches_bill: true`.
+- All four equal-share participants showed `discount_share: -₹17`.
+
+**UI bug also caught in this case:** Discount column in `ResultCard.tsx` rendered `--₹17` (double negative) because the UI prepended a `-` sign before calling `fmt()`, which already emits `-` for negative numbers.  
+**Fix location:** `ResultCard.tsx` line 466 — removed hardcoded `-` prefix.
 
 ---
 
@@ -92,9 +94,9 @@ Both flags were wrong in reasoning: 2 people sharing 1 platter is normal sharing
 **Expected split:**
 | Person | Cappuccino | Croissant | Sandwich | Subtotal |
 |---|---|---|---|---|
-| Arjun | ₹180 (1/4 described) | ₹110 | — | ₹290 |
-| Nisha | ₹180 (1/4 described) | ₹110 | — | ₹290 |
-| Tarun | ₹360 (2/4 described) | — | ₹260 | ₹620 |
+| Arjun | ₹135 (1/4 described) | ₹110 | — | ₹245 |
+| Nisha | ₹135 (1/4 described) | ₹110 | — | ₹245 |
+| Tarun | ₹270 (2/4 described) | — | ₹260 | ₹530 |
 
 **What the tool did (before fix):** Flagged the discrepancy (described qty 4 > billed qty 3) correctly. But split the ₹540 as 1:1:1 (₹180 each) instead of 1:1:2 (₹135:₹135:₹270). Tarun was undercharged ₹180.
 
@@ -119,16 +121,19 @@ Both flags were wrong in reasoning: 2 people sharing 1 platter is normal sharing
 
 ---
 
-## EC-7 — Discount Applied Before Service & Tax (Punjab Da Dhaba, Bill #2274)
+## EC-7 — Tip / Handwritten Addition Silently Dropped (Rohan/Sneha Bill)
 
-**Receipt:** Subtotal ₹690. Coupon FLAT10 applies 10% discount = -₹69. Service charge 2.5% = ₹31.05 (applied to post-discount subtotal per bill footer: "Discount applied before service & tax"). CGST + SGST 5% = ₹32.60. Round-off -₹0.05. Grand total ₹684.
+**Receipt:** Standard printed bill total ₹970. Handwritten tip of ₹88 added at the bottom. Rohan paid ₹1,058 total.
 
-**Complexity:** Discount applied before service and tax changes the arithmetic order. Most receipts apply discount to subtotal; here it affects the base for service and tax too.
+**What the tool did (before fix):** Gemini OCR had no `extra_charges` field in the schema, so the tip had nowhere to go. It was silently dropped. Output: grand total ₹970, "Zero Variance Reconciled," 0 audit flags. Sneha was told she owed ₹452 (her share of ₹970). Rohan was short ₹88 with no indication why.
 
-**Result:** Tool extracted all fields correctly. Service and tax allocation (proportional to each person's post-discount subtotal) matched the bill. `matches_bill: true`. All four equal-share participants correctly showed `discount_share: -₹17`.
+**Correct behaviour:**
+- Tip extracted into `extra_charges: [{name: "Tip", amount: 88, is_handwritten: true}]`.
+- Each extra charge generates an audit flag: `"'Tip' of ₹88 found on bill (appears handwritten) — not covered by fairness rules. Excluded from split. Verify with participants."`
+- Split is computed on ₹970 (the printed bill before tip). `matches_bill: false` because ₹970 ≠ ₹1,058.
+- Users decide manually whether to split the tip; the tool does not decide silently.
 
-**UI bug found:** Discount column in `ResultCard.tsx` rendered `--₹17` (double negative) because the UI prepended a `-` sign before calling `fmt()`, which already emits `-` for negative numbers.  
-**Fix location:** `ResultCard.tsx` line 466 — removed hardcoded `-` prefix.
+**Fix location:** `extractor.py` — `extra_charges` field added to OCR schema with Rule 11. `calculator.py` — Step 0a flags every entry in `extra_charges`.
 
 ---
 
@@ -152,8 +157,16 @@ Both flags were wrong in reasoning: 2 people sharing 1 platter is normal sharing
 
 ## EC-10 — Offline Fallback Parser
 
-**Scenario:** Gemini API rate limit hit during description parsing.
+**Scenario:** Gemini API rate limit hit — either during image extraction (Stage 1), description parsing (Stage 2), or both.
 
-**Expected:** Fallback parser `_mock_fallback_description()` runs, identifies people from capitalized words in the description, infers payer from "X paid" pattern, assigns all items to all identified people equally, and adds flag: `"Generated via offline fallback parser due to AI rate limits."`
+**Two distinct failure modes that must not be conflated:**
 
-**Result:** Verified on Punjab Da Dhaba test run (EC-7 above). All arithmetic correct. Flag correctly surfaced. Limitation: fallback cannot handle subset assignments — everything is assigned equally when fallback is active.
+**Mode A — Description parsing fallback only (Stage 2 fails, Stage 1 succeeded):**  
+Fallback parser `_mock_fallback_description()` runs, identifies people from capitalised words in the description, infers payer from "X paid" pattern, assigns all items to all identified people equally, and adds flag: `"Generated via offline fallback parser due to AI rate limits."` The receipt is real; only the item assignments are degraded to equal-split.
+
+**Mode B — Image extraction also fails (Stage 1 AND Stage 2 both fail):**  
+This is a worse and distinct failure. `_mock_fallback_receipt()` fires, which returns a hardcoded mock receipt (Grand Bistro, INV-8924, ₹1,881 bill with Cappuccino/Sandwich/Pasta). If Stage 2 also fails, the fallback description parser then assigns *these fabricated items* to the real people from the description. The result looks structurally correct — reconciled totals, settle-up transfers, all formatting intact — but the entire bill is fictional. **This is the most dangerous failure mode: the output is confidently wrong with no indication that the receipt data is fabricated.**
+
+**Observed during testing:** EC-3 (Punjab Da Dhaba) triggered Mode B. The tool returned a Grand Bistro split instead of a Punjab Da Dhaba split. The only visible signal was the wrong restaurant name in `receipt_meta`. The `flags` array contained no receipt-level warning.
+
+**Current mitigation:** The `_mock_fallback_receipt()` function logs `"Using offline fallback receipt structure"` to the server console, but this is not surfaced to the API response. A future fix should add a flag: `"Receipt extraction failed — using mock data. Results are NOT based on your receipt."` to make Mode B failures visible to the caller.
