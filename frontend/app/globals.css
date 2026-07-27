@@ -1,0 +1,384 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  /* ── Canvas & Surface ── */
+  --bg-canvas: #F8FAFC;
+  --bg-canvas-subtle: #F1F5F9;
+  --surface-card: #FFFFFF;
+  --surface-subtle: #F8FAFC;
+  --surface-hover: #F1F5F9;
+  --surface-active: #E2E8F0;
+
+  /* ── Primary Accent: Emerald Green (#10B981) ── */
+  --primary: #10B981;
+  --primary-hover: #059669;
+  --primary-active: #047857;
+  --primary-light: #ECFDF5;
+  --primary-border: #A7F3D0;
+  --primary-text: #047857;
+
+  /* ── Secondary Accent: Electric Blue (#3B82F6) ── */
+  --secondary: #3B82F6;
+  --secondary-hover: #2563EB;
+  --secondary-active: #1D4ED8;
+  --secondary-light: #EFF6FF;
+  --secondary-border: #BFDBFE;
+  --secondary-text: #1D4ED8;
+
+  /* ── Neutral Slate Palette ── */
+  --text-main: #0F172A;       /* Slate-900 */
+  --text-body: #334155;       /* Slate-700 */
+  --text-muted: #64748B;      /* Slate-500 */
+  --text-light: #94A3B8;      /* Slate-400 */
+
+  --border: #E2E8F0;           /* Slate-200 */
+  --border-hover: #CBD5E1;     /* Slate-300 */
+  --border-focus: #3B82F6;     /* Electric Blue focus */
+
+  /* ── Status Colors ── */
+  --success-bg: #ECFDF5;
+  --success-border: #A7F3D0;
+  --success-text: #047857;
+  --warning-bg: #FFFBEB;
+  --warning-border: #FDE68A;
+  --warning-text: #B45309;
+  --danger-bg: #FEF2F2;
+  --danger-border: #FECACA;
+  --danger-text: #B91C1C;
+
+  /* ── Radius System ── */
+  --radius-card: 22px;
+  --radius-inner: 14px;
+  --radius-sm: 8px;
+  --radius-pill: 9999px;
+
+  /* ── Elevation Shadows ── */
+  --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --shadow-card: 0 1px 3px 0 rgba(15, 23, 42, 0.03), 0 10px 25px -5px rgba(15, 23, 42, 0.05);
+  --shadow-hover: 0 4px 6px -1px rgba(15, 23, 42, 0.04), 0 20px 35px -10px rgba(15, 23, 42, 0.08);
+  --shadow-modal: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+  --shadow-glow-emerald: 0 4px 20px -2px rgba(16, 185, 129, 0.35);
+  --shadow-glow-blue: 0 4px 20px -2px rgba(59, 130, 246, 0.25);
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-canvas);
+  color: var(--text-main);
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* Subtle fintech grid pattern background */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: 
+    radial-gradient(at 50% 0%, rgba(59, 130, 246, 0.04) 0%, transparent 60%),
+    radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.04) 0%, transparent 50%),
+    linear-gradient(to right, rgba(226, 232, 240, 0.4) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(226, 232, 240, 0.4) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.page-container {
+  position: relative;
+  z-index: 1;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px 20px 80px;
+}
+
+/* ── Typography & Headings ── */
+h1, h2, h3, .font-heading {
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  letter-spacing: -0.02em;
+  color: var(--text-main);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ── Cards ── */
+.neo-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.neo-card-hover:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-1px);
+}
+
+/* ── Form Inputs ── */
+.neo-textarea {
+  width: 100%;
+  min-height: 190px;
+  padding: 16px 18px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-inner);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.neo-textarea::placeholder {
+  color: var(--text-light);
+}
+
+.neo-textarea:focus {
+  background: var(--surface-card);
+  border-color: var(--secondary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+/* ── Buttons ── */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 16px 28px;
+  background: var(--primary);
+  color: #FFFFFF;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: var(--radius-inner);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-glow-emerald);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  letter-spacing: -0.01em;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px -2px rgba(16, 185, 129, 0.45);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+  background: var(--primary-active);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 16px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-body);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.btn-secondary:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+  color: var(--text-main);
+}
+
+/* ── Sample Chips ── */
+.sample-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: var(--secondary-light);
+  border: 1px solid var(--secondary-border);
+  border-radius: var(--radius-pill);
+  color: var(--secondary-text);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.sample-chip:hover {
+  background: #DBEAFE;
+  border-color: #93C5FD;
+  transform: translateY(-1px);
+}
+
+/* ── Badges ── */
+.badge-emerald {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: var(--primary-light);
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-pill);
+  color: var(--primary-text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.badge-blue {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: var(--secondary-light);
+  border: 1px solid var(--secondary-border);
+  border-radius: var(--radius-pill);
+  color: var(--secondary-text);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+/* ── Table Styling ── */
+.fintech-table-container {
+  overflow-x: auto;
+  border-radius: var(--radius-inner);
+  border: 1px solid var(--border);
+  background: var(--surface-card);
+}
+
+.fintech-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 640px;
+}
+
+.fintech-table th {
+  padding: 14px 18px;
+  background: var(--surface-subtle);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.fintech-table td {
+  padding: 16px 18px;
+  font-size: 0.88rem;
+  color: var(--text-body);
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.fintech-table tr:last-child td {
+  border-bottom: none;
+}
+
+.fintech-table tbody tr {
+  transition: background-color 0.15s ease;
+}
+
+.fintech-table tbody tr:hover {
+  background-color: rgba(248, 250, 252, 0.8);
+}
+
+/* ── Animations & Shimmer ── */
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.shimmer-box {
+  background: linear-gradient(90deg, #F1F5F9 25%, #E2E8F0 50%, #F1F5F9 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.6s infinite linear;
+  border-radius: 6px;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ── Modal / Overlay ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+/* ── Toast Notifications ── */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  background: var(--text-main);
+  color: #FFFFFF;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: var(--shadow-modal);
+  animation: slideUp 0.25s ease-out;
+}
+
+/* ── Print Media Styles ── */
+@media print {
+  body { background: white !important; }
+  .no-print { display: none !important; }
+  .neo-card { box-shadow: none !important; border: 1px solid #CCC !important; }
+}
