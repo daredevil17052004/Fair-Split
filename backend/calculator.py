@@ -1,19 +1,3 @@
-"""
-Pure Python arithmetic engine for bill splitting.
-
-No AI/LLM calls here — all math is deterministic and verifiable.
-
-Fairness rules (per assignment spec):
-  1. Each person pays for items they consumed.
-  2. Shared items split equally among the people who shared that specific item.
-  3. Tax + service charge allocated proportional to each person's pre-tax subtotal.
-  4. A bill-level discount allocated proportional to subtotal.
-  5. Round-off line (if present) distributed proportionally; absorbed by largest-share
-     person only when the residual is ≤ ₹2 (pure paise-level rounding artefact).
-  6. If extracted totals diverge from the printed grand total by more than ₹2,
-     the discrepancy is FLAGGED and NOT absorbed — matches_bill is set to false.
-"""
-
 from __future__ import annotations
 
 import heapq
