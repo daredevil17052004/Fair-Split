@@ -46,11 +46,17 @@ export interface ReceiptMeta {
   currency: string
 }
 
+export interface PayerBreakdown {
+  name: string
+  amount_paid: number
+}
+
 export interface SplitResult {
   per_person: PersonSplit[]
   grand_total: number
   reconciliation: Reconciliation
-  paid_by: string | null
+  paid_by: string[]           // always a list — one or more payers
+  payers: PayerBreakdown[]    // [{name, amount_paid}] with resolved amounts
   settle_up: SettleUpItem[]
   assumptions: string[]
   flags: string[]
@@ -223,7 +229,8 @@ export default function ResultCard({ result }: { result: SplitResult }) {
   const copySummaryText = () => {
     let text = `🧾 *${receipt_meta?.restaurant_name ?? 'Restaurant Bill'} — Fair Split*\n`
     text += `Grand Total: ${currency}${grand_total.toLocaleString('en-IN')}\n`
-    if (paid_by) text += `Paid by: ${paid_by}\n\n`
+    if (paid_by && paid_by.length > 0)
+      text += `Paid by: ${paid_by.join(', ')}\n\n`
 
     text += `*Per Person Breakdown:*\n`
     per_person.forEach((p) => {
@@ -307,9 +314,12 @@ export default function ResultCard({ result }: { result: SplitResult }) {
                   <Calendar size={14} /> {receipt_meta.date}
                 </span>
               )}
-              {paid_by && (
+              {paid_by && paid_by.length > 0 && (
                 <span className="badge-blue" style={{ fontSize: '0.72rem' }}>
-                  <CreditCard size={12} /> Paid by {paid_by}
+                  <CreditCard size={12} />
+                  {paid_by.length === 1
+                    ? `Paid by ${paid_by[0]}`
+                    : `Paid by ${paid_by.slice(0, -1).join(', ')} & ${paid_by[paid_by.length - 1]}`}
                 </span>
               )}
             </div>
@@ -403,7 +413,7 @@ export default function ResultCard({ result }: { result: SplitResult }) {
                         <InitialsAvatar name={p.name} />
                         <div>
                           <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{p.name}</span>
-                          {p.name === paid_by && (
+                          {paid_by && paid_by.includes(p.name) && (
                             <span
                               style={{
                                 display: 'inline-block',
@@ -515,7 +525,11 @@ export default function ResultCard({ result }: { result: SplitResult }) {
               }}
             >
               <Info size={18} style={{ color: 'var(--secondary)' }} />
-              {paid_by ? `${paid_by} paid the exact bill total — no transfers required.` : 'No payer detected in notes.'}
+              {paid_by && paid_by.length > 0
+                ? paid_by.length === 1
+                  ? `${paid_by[0]} paid the exact bill total — no transfers required.`
+                  : `${paid_by.join(' & ')} split the bill — no further transfers required.`
+                : 'No payer detected in notes.'}
             </div>
           ) : (
             <div

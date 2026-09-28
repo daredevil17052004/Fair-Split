@@ -83,7 +83,7 @@ def calculate_split(
     grand_total: float,
     assignments: List[Dict],
     people: List[str],
-    payer: Optional[str],
+    payers: List[Dict],
     assumptions: List[str],
     flags: List[str],
     extra_charges: Optional[List[Dict]] = None,
@@ -101,7 +101,12 @@ def calculate_split(
         grand_total:    printed grand total (₹)
         assignments:    [{item: str, assigned_to: [names]}] — from parser
         people:         all people in the party
-        payer:          name of person who paid, or None
+        payers:         list of {name, amount_paid?} dicts.
+                        Multiple payers are fully supported.
+                        If amount_paid is omitted/null for a single payer they are
+                        assumed to have paid the entire grand total.
+                        If amount_paid is omitted for multiple payers the remaining
+                        balance is distributed equally among those without an amount.
         assumptions:    mutable list — appended to during calculation
         flags:          mutable list — appended to during calculation
         extra_charges:  [{name, amount, is_handwritten}] — tips, delivery fees, etc.
@@ -356,35 +361,92 @@ def calculate_split(
         "matches_bill": final_sum == grand_total_int,
     }
 
-    # ── 7. Settle-up (greedy minimum-transactions algorithm) ─────────────────
+    # ── 7. Settle-up (multi-payer net-flow → greedy minimum-transactions) ────
     #
-    # Build net balances:
-    #   Payer   → positive (they are owed everyone else's share)
-    #   Others  → negative (they owe their computed total)
+    # For each payer, record how much they actually put in (amount_paid).
+    # Net balance per person = amount_paid − amount_owed.
+    #   positive → creditor (overpaid, others owe them)
+    #   negative → debtor   (underpaid, they owe others)
     #
-    # _greedy_settle_up() then minimises the number of peer-to-peer transfers
-    # using a max-heap matching of creditors against debtors.
+    # _greedy_settle_up() then minimises peer-to-peer transfers using a
+    # max-heap matching of creditors against debtors.
+    #
+    # Special cases:
+    #   • Single payer with no amount_paid → assumed full grand total.
+    #   • Multiple payers, some without amount_paid → remaining balance
+    #     split equally among those with no stated amount (noted in assumptions).
+    #   • No payers at all → flagged, settle_up left empty.
     settle_up: List[Dict] = []
-    if payer:
+    payer_names: List[str] = [p["name"] for p in payers]
+    payers_breakdown: List[Dict] = []
+
+    if not payers:
+        flags.append("No payer identified — settle-up cannot be computed")
+    else:
+        # ── Resolve amount_paid for every payer ────────────────────────────
+        known: Dict[str, float] = {}   # payers with explicit amount_paid
+        unknown_names: List[str] = []  # payers without amount_paid
+
+        for p in payers:
+            ap = p.get("amount_paid")
+            if ap is not None:
+                try:
+                    known[p["name"]] = float(ap)
+                except (TypeError, ValueError):
+                    unknown_names.append(p["name"])
+            else:
+                unknown_names.append(p["name"])
+
+        # Single payer with no stated amount → they paid everything
+        if len(payers) == 1 and unknown_names:
+            known[payers[0]["name"]] = float(grand_total_int)
+            unknown_names = []
+
+        # Multiple payers, some without amount → split remainder equally
+        if unknown_names:
+            known_total = sum(known.values())
+            remainder = max(float(grand_total_int) - known_total, 0.0)
+            per_unknown = remainder / len(unknown_names)
+            for name in unknown_names:
+                known[name] = per_unknown
+            assumptions.append(
+                f"Amount paid by {', '.join(unknown_names)} not stated — "
+                f"assumed equal share of remaining "
+                f"₹{round(per_unknown)} each."
+            )
+
+        # ── Validate total paid vs grand total ─────────────────────────────
+        total_paid = sum(known.values())
+        if abs(total_paid - grand_total_int) > 1:
+            flags.append(
+                f"Total paid by all payers (₹{round(total_paid)}) "
+                f"≠ grand total (₹{grand_total_int}) — "
+                f"₹{abs(round(total_paid - grand_total_int))} unexplained. "
+                f"Settle-up computed on stated amounts."
+            )
+
+        # ── Compute net balances ───────────────────────────────────────────
+        # Every person's net = what they paid − what they owe.
+        # People not in payers list have paid ₹0.
         net_balances: Dict[str, float] = {}
         for p in per_person_data:
-            if p["name"] == payer:
-                # Payer fronted the full bill; they are owed everyone else's share
-                net_balances[payer] = float(
-                    sum(o["total"] for o in per_person_data if o["name"] != payer)
-                )
-            else:
-                net_balances[p["name"]] = -float(p["total"])  # they owe this
+            paid = known.get(p["name"], 0.0)
+            net_balances[p["name"]] = paid - float(p["total"])
 
         settle_up = _greedy_settle_up(net_balances)
-    else:
-        flags.append("No payer identified — settle-up cannot be computed")
+
+        # ── Build payers_breakdown for API response ────────────────────────
+        payers_breakdown = [
+            {"name": name, "amount_paid": round(amount)}
+            for name, amount in known.items()
+        ]
 
     return {
         "per_person": per_person_data,
         "grand_total": grand_total_int,
         "reconciliation": reconciliation,
-        "paid_by": payer,
+        "paid_by": payer_names,          # now always a list
+        "payers": payers_breakdown,       # [{name, amount_paid}] breakdown
         "settle_up": settle_up,
         "assumptions": assumptions,
         # Deduplicate flags while preserving order (dict.fromkeys trick)

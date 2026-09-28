@@ -47,14 +47,14 @@ def test_r1_totals_reconcile():
         grand_total=1147,
         assignments=assignments,
         people=["Ravi", "Neha", "Sameer"],
-        payer="Sameer",
+        payers=[{"name": "Sameer"}],   # single payer, amount_paid inferred = 1147
         assumptions=[],
         flags=[],
     )
 
     assert result["grand_total"] == 1147
     assert result["reconciliation"]["matches_bill"] is True
-    assert result["paid_by"] == "Sameer"
+    assert result["paid_by"] == ["Sameer"]
     assert result["reconciliation"]["sum_of_person_totals"] == 1147
     assert len(result["flags"]) == 0  # clean bill, no flags expected
 
@@ -97,7 +97,7 @@ def test_r1_no_discount():
         grand_total=1147,
         assignments=assignments,
         people=["Ravi", "Neha", "Sameer"],
-        payer="Sameer",
+        payers=[{"name": "Sameer"}],
         assumptions=[],
         flags=[],
     )
@@ -140,7 +140,7 @@ def test_r2_partial_shared_item():
         grand_total=1345,
         assignments=assignments,
         people=all_four,
-        payer="Priya",
+        payers=[{"name": "Priya"}],
         assumptions=[],
         flags=[],
     )
@@ -159,7 +159,7 @@ def test_r2_partial_shared_item():
     assert by_name["Priya"]["subtotal"] == 335
     assert by_name["Karan"]["subtotal"] == 335
 
-    # Priya is payer — doesn't appear in settle_up
+    # Priya is payer — doesn't appear in settle_up as "from"
     settle_from = {s["from"] for s in result["settle_up"]}
     assert "Priya" not in settle_from
     assert "Aman" in settle_from
@@ -196,7 +196,7 @@ def test_r2_settle_up_sums_correctly():
         grand_total=1345,
         assignments=assignments,
         people=all_four,
-        payer="Priya",
+        payers=[{"name": "Priya"}],
         assumptions=[],
         flags=[],
     )
@@ -239,7 +239,7 @@ def test_r3_three_way_and_two_way_split():
         grand_total=1720,
         assignments=assignments,
         people=all_three,
-        payer="Rohit",
+        payers=[{"name": "Rohit"}],
         assumptions=[],
         flags=[],
     )
@@ -281,7 +281,7 @@ def test_r3_reconciled():
     result = calculate_split(
         line_items=line_items, subtotal=1560, service_charge=78, discount=0,
         tax=81.90, round_off=0.10, grand_total=1720, assignments=assignments,
-        people=all_three, payer="Rohit", assumptions=[], flags=[],
+        people=all_three, payers=[{"name": "Rohit"}], assumptions=[], flags=[],
     )
     totals = [p["total"] for p in result["per_person"]]
     assert sum(totals) == 1720
@@ -321,7 +321,7 @@ def test_r4_discount_allocation():
         grand_total=1436,
         assignments=assignments,
         people=all_four,
-        payer="Anjali",
+        payers=[{"name": "Anjali"}],
         assumptions=[],
         flags=[],
     )
@@ -366,13 +366,155 @@ def test_r4_totals_sum():
     result = calculate_split(
         line_items=line_items, subtotal=1520, service_charge=76, discount=228,
         tax=68.40, round_off=-0.40, grand_total=1436, assignments=assignments,
-        people=all_four, payer="Anjali", assumptions=[], flags=[],
+        people=all_four, payers=[{"name": "Anjali"}], assumptions=[], flags=[],
     )
     assert sum(p["total"] for p in result["per_person"]) == 1436
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Edge case tests
+# Multi-payer tests (new)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_two_payers_explicit_amounts():
+    """
+    Priya paid ₹800 and Aman paid ₹545 for a ₹1345 bill.
+    Karan and Sara owe their individual totals split proportionally
+    between the two creditors (Priya and Aman).
+    """
+    line_items = [
+        {"name": "Paneer Butter Masala", "qty": 1, "amount": 320},
+        {"name": "Dal Makhani", "qty": 1, "amount": 260},
+        {"name": "Butter Naan", "qty": 4, "amount": 240},
+        {"name": "Jeera Rice", "qty": 1, "amount": 180},
+        {"name": "Gulab Jamun", "qty": 2, "amount": 120},
+        {"name": "Masala Papad", "qty": 2, "amount": 100},
+    ]
+    all_four = ["Aman", "Priya", "Karan", "Sara"]
+    assignments = [
+        {"item": "Paneer Butter Masala", "assigned_to": all_four},
+        {"item": "Dal Makhani", "assigned_to": all_four},
+        {"item": "Butter Naan", "assigned_to": all_four},
+        {"item": "Jeera Rice", "assigned_to": all_four},
+        {"item": "Gulab Jamun", "assigned_to": ["Priya", "Karan"]},
+        {"item": "Masala Papad", "assigned_to": all_four},
+    ]
+    result = calculate_split(
+        line_items=line_items,
+        subtotal=1220,
+        service_charge=61,
+        discount=0,
+        tax=64.05,
+        round_off=-0.05,
+        grand_total=1345,
+        assignments=assignments,
+        people=all_four,
+        payers=[
+            {"name": "Priya", "amount_paid": 800},
+            {"name": "Aman", "amount_paid": 545},
+        ],
+        assumptions=[],
+        flags=[],
+    )
+
+    assert result["grand_total"] == 1345
+    assert result["reconciliation"]["matches_bill"] is True
+    assert set(result["paid_by"]) == {"Priya", "Aman"}
+
+    # Both payers appear in breakdown
+    breakdown = {p["name"]: p["amount_paid"] for p in result["payers"]}
+    assert breakdown["Priya"] == 800
+    assert breakdown["Aman"] == 545
+
+    # Settle-up: Karan and Sara are debtors; Priya and Aman are creditors.
+    # Neither payer should appear as "from".
+    settle_from = {s["from"] for s in result["settle_up"]}
+    assert "Priya" not in settle_from
+    assert "Aman" not in settle_from
+    assert "Karan" in settle_from
+    assert "Sara" in settle_from
+
+    # The settle_up amounts represent what non-payers (debtors) owe to payers.
+    # Each debtor's settle amount should equal their individual total.
+    by_name = {p["name"]: p for p in result["per_person"]}
+    karan_owed = by_name["Karan"]["total"]
+    sara_owed = by_name["Sara"]["total"]
+    settle_amounts = {}
+    for s in result["settle_up"]:
+        settle_amounts[s["from"]] = settle_amounts.get(s["from"], 0) + s["amount"]
+    assert abs(settle_amounts.get("Karan", 0) - karan_owed) <= 1
+    assert abs(settle_amounts.get("Sara", 0) - sara_owed) <= 1
+
+
+def test_two_payers_no_amounts_assumed_equal():
+    """
+    'Priya and Aman paid' with no amounts → each assumed to have paid 1345/2 ≈ 672.
+    """
+    line_items = [{"name": "Dinner", "qty": 1, "amount": 1000}]
+    assignments = [{"item": "Dinner", "assigned_to": ["Priya", "Aman", "Karan"]}]
+    result = calculate_split(
+        line_items=line_items,
+        subtotal=1000,
+        service_charge=0,
+        discount=0,
+        tax=0,
+        round_off=0,
+        grand_total=1000,
+        assignments=assignments,
+        people=["Priya", "Aman", "Karan"],
+        payers=[
+            {"name": "Priya"},           # no amount_paid
+            {"name": "Aman"},            # no amount_paid
+        ],
+        assumptions=[],
+        flags=[],
+    )
+
+    # Assumption about equal split should be noted
+    assumptions_text = " ".join(result["assumptions"])
+    assert "Priya" in assumptions_text or "Aman" in assumptions_text
+
+    # Both in paid_by
+    assert set(result["paid_by"]) == {"Priya", "Aman"}
+
+    # Karan must owe someone (he paid nothing)
+    settle_from = {s["from"] for s in result["settle_up"]}
+    assert "Karan" in settle_from
+
+    # Grand total still reconciles
+    all_totals = sum(p["total"] for p in result["per_person"])
+    assert all_totals == 1000
+
+
+def test_multi_payer_one_with_amount_one_without():
+    """
+    Priya paid ₹700, Aman paid the rest (₹300). No flags for unexplained gap.
+    """
+    line_items = [{"name": "Feast", "qty": 1, "amount": 1000}]
+    assignments = [{"item": "Feast", "assigned_to": ["Priya", "Aman", "Karan"]}]
+    result = calculate_split(
+        line_items=line_items,
+        subtotal=1000, service_charge=0, discount=0, tax=0, round_off=0,
+        grand_total=1000,
+        assignments=assignments,
+        people=["Priya", "Aman", "Karan"],
+        payers=[
+            {"name": "Priya", "amount_paid": 700},
+            {"name": "Aman"},          # remaining 300
+        ],
+        assumptions=[],
+        flags=[],
+    )
+
+    breakdown = {p["name"]: p["amount_paid"] for p in result["payers"]}
+    assert breakdown["Priya"] == 700
+    assert breakdown["Aman"] == 300   # inferred remainder
+
+    # No "unexplained gap" flag
+    assert not any("unexplained" in f.lower() for f in result["flags"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Original edge case tests (adapted for payers=[])
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_three_way_equal_split_rounding():
@@ -387,7 +529,7 @@ def test_three_way_equal_split_rounding():
         grand_total=100,
         assignments=[{"item": "Shared Item", "assigned_to": ["A", "B", "C"]}],
         people=["A", "B", "C"],
-        payer="A",
+        payers=[{"name": "A"}],
         assumptions=[],
         flags=[],
     )
@@ -407,11 +549,11 @@ def test_no_payer_adds_flag():
         grand_total=100,
         assignments=[{"item": "Item", "assigned_to": ["A", "B"]}],
         people=["A", "B"],
-        payer=None,
+        payers=[],   # no payers
         assumptions=[],
         flags=[],
     )
-    assert result["paid_by"] is None
+    assert result["paid_by"] == []
     assert result["settle_up"] == []
     assert any("No payer" in f for f in result["flags"])
 
@@ -427,7 +569,7 @@ def test_unassigned_item_raises_flag():
         grand_total=150,
         assignments=[{"item": "Item A", "assigned_to": ["Alice"]}],
         people=["Alice"],
-        payer="Alice",
+        payers=[{"name": "Alice"}],
         assumptions=[],
         flags=[],
     )
@@ -442,7 +584,7 @@ def test_single_person():
         grand_total=882,
         assignments=[{"item": "Steak", "assigned_to": ["Solo"]}],
         people=["Solo"],
-        payer="Solo",
+        payers=[{"name": "Solo"}],
         assumptions=[],
         flags=[],
     )
@@ -461,7 +603,7 @@ def test_person_with_zero_subtotal():
         grand_total=500,
         assignments=[{"item": "Dinner", "assigned_to": ["Alice"]}],
         people=["Alice", "Bob"],
-        payer="Alice",
+        payers=[{"name": "Alice"}],
         assumptions=[],
         flags=[],
     )

@@ -17,6 +17,8 @@ from pydantic import BaseModel, field_validator
 
 from calculator import calculate_split
 from extractor import extract_receipt, parse_description
+from rag_service import rag_service
+from eval_guardrail import run_all_evaluations
 
 load_dotenv()
 
@@ -69,6 +71,19 @@ class SplitRequest(BaseModel):
         if not v.strip():
             raise ValueError("description must not be empty")
         return v.strip()
+
+
+class RAGSearchRequest(BaseModel):
+    query: str
+    top_k: int = 4
+
+
+class RAGIngestRequest(BaseModel):
+    restaurant_name: Optional[str] = "Custom Ingestion"
+    date: Optional[str] = None
+    grand_total: float = 0.0
+    line_items: List[Dict[str, Any]] = []
+
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -128,9 +143,9 @@ async def split_bill(req: SplitRequest) -> Dict[str, Any]:
 
     # ── Stage 3: Pure Python arithmetic ─────────────────────────────────
     logger.info(
-        "Computing split: %d people, payer=%s",
+        "Computing split: %d people, payers=%s",
         len(parsed["people"]),
-        parsed.get("payer"),
+        [p["name"] for p in parsed.get("payers", [])],
     )
     result = calculate_split(
         line_items=receipt["line_items"],
@@ -142,7 +157,7 @@ async def split_bill(req: SplitRequest) -> Dict[str, Any]:
         grand_total=float(receipt.get("grand_total", 0)),
         assignments=parsed.get("assignments", []),
         people=parsed["people"],
-        payer=parsed.get("payer"),
+        payers=parsed.get("payers", []),
         assumptions=parsed.get("assumptions", []),
         flags=parsed.get("flags", []),
         extra_charges=receipt.get("extra_charges", []),
@@ -163,6 +178,51 @@ async def split_bill(req: SplitRequest) -> Dict[str, Any]:
         len(result["flags"]),
     )
     return result
+
+
+@app.get("/api/rag/stats", tags=["rag"])
+def get_rag_stats() -> Dict[str, Any]:
+    """
+    Returns Pinecone vector store stats, dimension, caching metrics, and latency profile.
+    """
+    return rag_service.get_stats()
+
+
+@app.post("/api/rag/search", tags=["rag"])
+def rag_search(req: RAGSearchRequest) -> Dict[str, Any]:
+    """
+    Performs semantic vector search in Pinecone over bill line items,
+    canonical dish dictionaries, and restaurant tax ontology.
+    """
+    matches = rag_service.retrieve_context(req.query, top_k=req.top_k)
+    return {
+        "query": req.query,
+        "matches_count": len(matches),
+        "results": matches,
+    }
+
+
+@app.post("/api/rag/ingest", tags=["rag"])
+def rag_ingest(req: RAGIngestRequest) -> Dict[str, Any]:
+    """
+    Ingests bill line items and metadata into the Pinecone vector database.
+    """
+    doc_id = rag_service.ingest_receipt(req.model_dump())
+    return {
+        "status": "success",
+        "document_id": doc_id,
+        "items_indexed": len(req.line_items) + 1,
+    }
+
+
+@app.get("/api/rag/eval", tags=["rag"])
+def rag_evaluation_report() -> Dict[str, Any]:
+    """
+    Executes the automated evaluation and guardrail suite.
+    Benchmarks ground-truth math accuracy, Pinecone disambiguation, latency, and hallucination reduction.
+    """
+    return run_all_evaluations()
+
 
 
 # ── Global error handler ──────────────────────────────────────────────────────
